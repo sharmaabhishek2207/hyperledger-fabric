@@ -1,0 +1,216 @@
+
+#Steps in sequence --
+#To run Hyperledger Composer and Hyperledger Fabric, we recommend you have at least 4Gb of memory.
+#The following are prerequisites for installing the required development tools:
+
+		Operating Systems: Ubuntu Linux 14.04 / 16.04 LTS (both 64-bit), or Mac OS 10.12
+		Docker Engine: Version 17.03 or higher
+		Docker-Compose: Version 1.8 or higher
+		Node: 8.9 or higher (note version 9 is not supported)
+		npm: v5.x
+		git: 2.9.x or higher
+		Python: 2.7.x
+		A code editor of your choice, we recommend VSCode.
+
+
+cd /home/ubuntu
+sudo mkdir abhishek
+sudo chmod -R 777 abhishek
+cd abhishek		
+curl -O https://hyperledger.github.io/composer/latest/prereqs-ubuntu.sh
+chmod u+x prereqs-ubuntu.sh
+./prereqs-ubuntu.sh
+
+#If you have used fabric tools before please use below -
+docker kill $(docker ps -q)
+docker rm $(docker ps -aq)
+docker rmi $(docker images dev-* -q)
+
+
+#Essential CLI tools:
+npm install -g composer-cli
+
+#Utility for running a REST Server on your machine to expose your business networks as RESTful APIs:
+npm install -g composer-rest-server
+
+#Useful utility for generating application assets:
+npm install -g generator-hyperledger-composer
+
+#Yeoman is a tool for generating applications, which utilises generator-hyperledger-composer:
+npm install -g yo
+
+#Install Playground: Browser app for simple editing and testing Business Networks:
+npm install -g composer-playground
+
+#Install Hyperledger Fabric
+#In a directory of your choice (we will assume ~/fabric-tools), get the .tar.gz file that contains the tools to install Hyperledger Fabric:
+mkdir fabric-tools && cd fabric-tools
+curl -O https://raw.githubusercontent.com/hyperledger/composer-tools/master/packages/fabric-dev-servers/fabric-dev-servers.tar.gz
+tar -xvf fabric-dev-servers.tar.gz
+./downloadFabric.sh
+
+#Starting and stopping Hyperledger Fabric
+./startFabric.sh
+./createPeerAdminCard.sh
+
+#Start the web app ("Playground")
+composer-playground
+http://localhost:8080/login
+
+yo hyperledger-composer:businessnetwork
+Welcome to the business network generator
+	? Business network name: crypto-network
+	? Description: It is to store bank ledgers
+	? Author name:  Abhishek
+	? Author email: abhishek@yahoo.com
+	? License: Apache-2.0
+	? Namespace: org.crypto.network
+
+#Add below code in org.crypto.network.cto file
+cd crypto-network/models
+vi org.crypto.network.cto
+
+concept transfer {
+  o String addressTo
+  o Double Amount
+  
+}
+
+concept Wallet {
+  o String address
+  o Double Balance
+}
+
+asset transferAsset identified by transactionId {
+  o String transactionId
+  o transfer transfer
+  o DateTime date
+  o String Status
+  o Wallet fromWallet
+}
+
+transaction confirmTransfer  {
+  o String newStatus
+  o transfer transfer
+}
+
+participant User identified by userId {
+    o String userId
+    o String firstName
+    o String lastName
+    o Wallet wallet
+}
+
+cd ../
+sudo vi permissions.acl
+rule Default {
+    description: "Allow all participants access to all resources"
+    participant: "ANY"
+    operation: ALL
+    resource: "org.crypto.network.*"
+    action: ALLOW
+}
+
+rule SystemACL {
+  description:  "System ACL to permit all access"
+  participant: "ANY"
+  operation: ALL
+  resource: "org.hyperledger.composer.system.**"
+  action: ALLOW
+}
+
+#Create Business Network Archive (From Model Directory)—
+cd /home/ubuntu/abhishek/fabric-tools/crypto-network/models
+composer archive create -t dir -n ../
+
+#To install the business network, run the following command:
+composer network install --card PeerAdmin@hlfv1 --archiveFile crypto-network@0.0.1.bna
+
+#The composer network install command requires a PeerAdmin business network card (in this case one has been created and imported in advance), and the the file path of the .bna which defines the business network.
+
+#To start the business network, run the following command:
+composer network start --networkName crypto-network --networkVersion 0.0.1 --networkAdmin admin --networkAdminEnrollSecret adminpw --card PeerAdmin@hlfv1 --file networkadmin.card
+
+#The composer network start command requires a business network card, as well as the name of the admin identity for the business network, the name and version of the business network and the name of the file to be created ready to import as a business network card.
+
+#To import the network administrator identity as a usable business network card, run the following command:
+composer card import --file networkadmin.card
+
+#The composer card import command requires the filename specified in composer network start to create a card.
+
+#To check that the business network has been deployed successfully, run the following command to ping the network:
+composer network ping --card admin@crypto-network
+
+#To create the REST API, navigate to the crypto-network directory and run the following command:
+cd ../
+composer-rest-server
+? Enter the name of the business network card to use: admin@crypto-network
+? Specify if you want namespaces in the generated REST API: never use namespaces
+? Specify if you want to enable authentication for the REST API using Passport: No
+? Specify if you want to enable event publication over WebSockets: Yes
+? Specify if you want to enable TLS security for the REST API: No
+
+#Note - To restart the above server use this command instead of above steps --> composer-rest-server -c admin@crypto-network -n never -d n -w true
+
+#Open Port 3000 on AWS Console
+http://localhost:3000/explorer/
+
+#Now install Mongo DB —
+cd /home/ubuntu
+sudo apt-get update
+sudo apt install -y mongodb
+sudo systemctl status mongodb
+sudo systemctl enable mongodb
+
+sudo apt-get install unzip
+cd /home/ubuntu/abhishek
+
+git clone https://github.com/sharmaabhishek2207/hyperledger-fabric.git
+unzip crypto-frontend.zip -d .
+unzip crypto-backend.zip -d .
+
+
+cd ~/abhishek/crypto-backend   (Make sure all code reside in crypto-backend directory on unzip not in sub crypto-backend)
+sudo apt-get install build-essential
+npm install -g node-gyp
+npm install
+cd config
+sudo vi prod.json  
+sudo vi ./bin/www (change the line from - server.listen(port, 'localhost')  to   server.listen(port, '0.0.0.0') instead of localhost)
+sudo vi controller/cryptocontroller.js  (update the package name - org.crypto.network.transferAsset instead of org.biznet...)
+node ./bin/www
+
+#In postman
+Post request http://35.154.168.101:3005/api/v1/crypto/add-wallet
+{
+"walletId": "Test1234545",
+"address": "pubaddress",
+"amount": 1067800
+}
+
+# Note - do not put localhost in IP addresses in configuration files
+cd /home/ubuntu/abhishek/crypto-frontend
+sudo vi /src/environments/environment.ts  (update IP address alongwith port of HyperledgerApi, BackendApi, socket_io)
+sudo vi /src/environments/environment.prod.ts  (update IP address alongwith port of HyperledgerApi, BackendApi, socket_io)
+npm install -g @angular/cli
+npm install
+
+ng serve --host 0.0.0.0 --port 4200
+
+http://localhost:4200
+
+#In Wallet screen, click on send-to-db option and provide the below input and click on send button 
+{
+	"walletId": "Abhi12345456",
+	"transfer": {
+		"addressTo": "23234238234",
+		"Amount": "400"
+	},
+	"transactionId": "1134392342342",
+	"Status": "complete"
+}
+
+#Now again go back to postman and execute below command
+Get Request to insert into hyperledger - http://localhost:3005/api/v1/crypto/fetch
+
+#Come to Wallet screen and click on All Transaction option, and then get transaction button.
